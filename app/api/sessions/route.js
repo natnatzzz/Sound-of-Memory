@@ -15,5 +15,5 @@ export async function POST(request) {
  SCENARIOS.forEach((scenario,position)=>db.prepare('INSERT INTO trials (id,session_id,scenario,position) VALUES (?,?,?,?)').run(randomUUID(),id,scenario.id,position));
  })();
  return Response.json({ id, trials:trialResults(id) });
- } catch { return Response.json({ error: 'Could not save participant details. Please try again.' }, { status: 500 }); }
+ } catch(error) { console.error('Could not create participant session:', error); return Response.json({ error: 'Could not save participant details. Please try again.' }, { status: 500 }); }
 }

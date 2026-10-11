@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { database, trialSummary, trialResults } from '../../../lib/db';
-import { judge, roundSettings, ANSWER_MS } from '../../../lib/experiment.mjs';
+import { judge, roundSettings, ANSWER_MS, GROUP_PAUSE_MS } from '../../../lib/experiment.mjs';
 export const runtime = 'nodejs';
 export async function POST(request) {
  try {
@@ -11,7 +11,9 @@ export async function POST(request) {
  if (!session || !trial) return Response.json({ error:'Test scenario not found.' },{status:404});
  function result(round) {
   const trials=trialResults(session.id);
-  return {outcome:round.outcome,expected:round.sequence,...trialSummary(trial.id),trials,allCompleted:trials.every(t=>t.status==='completed')};
+  const timing=db.prepare('SELECT started_at,completed_at FROM sessions WHERE id=?').get(session.id);
+  const totalTimeMs=timing.completed_at ? Math.max(0,Date.parse(timing.completed_at)-Date.parse(timing.started_at)) : null;
+  return {outcome:round.outcome,expected:round.sequence,...trialSummary(trial.id),trials,totalTimeMs,allCompleted:trials.every(t=>t.status==='completed')};
  }
  if (body.action==='submit' && Number.isInteger(body.roundNumber)) {
   const saved=db.prepare('SELECT * FROM trial_rounds WHERE trial_id=? AND round_number=?').get(trial.id,body.roundNumber);
@@ -40,7 +42,7 @@ export async function POST(request) {
  const elapsed=Number(body.responseMs);
  if(!Number.isFinite(elapsed)||elapsed<0||!Array.isArray(body.events)||body.events.length>2000)return Response.json({error:'Invalid round data.'},{status:400});
  let outcome=judge(round.sequence,answer,elapsed);
- if(Date.now()-round.started_at>3000+round.sequence.length*round.digit_ms+ANSWER_MS+2000)outcome='timeout';
+ if(Date.now()-round.started_at>3000+round.sequence.length*round.digit_ms+(trial.scenario==='dtmf-grouped' ? Math.floor((round.sequence.length-1)/3)*GROUP_PAUSE_MS : 0)+ANSWER_MS+2000)outcome='timeout';
  db.transaction(()=>{
   db.prepare('UPDATE trial_rounds SET answer=?,response_ms=?,outcome=?,events=?,submitted_at=? WHERE id=?').run(answer,elapsed,outcome,JSON.stringify(body.events),new Date().toISOString(),round.id);
   if(outcome==='correct') {
