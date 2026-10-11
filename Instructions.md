@@ -13,7 +13,7 @@ When "Take the Test" is pressed
 - We will collect the following:
 -- Name
 -- Age
--- Gender
+-- Gender 
 - We should also collect their IP address location via the browser
 - There should be a button to "Start Test" once all the required info is filled in.
 
@@ -39,3 +39,4 @@ Technical details:
 - Probably build this in Next.JS if you think there is a better choice, let me know.
 - I think we will need a database to store results.  USe a local sqlite database to store this for now.
 - We will eventually enhance this to also play sounds during each round... so keep that in mind when deciding the technology.
+
