@@ -3,4 +3,5 @@ node_modules/
 data/
 .env*
 !.env.example
+!.env.local
 .next-recovery-cache/

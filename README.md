@@ -4,7 +4,7 @@ A Next.js memory experiment by Natalie Zhao, with a Neon PostgreSQL database.
 
 ## Run locally
 
-Use Node.js 20.19+. Configure `DATABASE_URL` in the ignored `.env.local` file with the Neon **dev** branch connection string (see `.env.example`), then run:
+Use Node.js 20.19+. Unlock the encrypted `.env.local` file as described below, or configure a local file with the Neon **dev** branch connection string (see `.env.example`), then run:
 
 ```sh
 npm install
@@ -17,11 +17,27 @@ Open http://localhost:3000. If port 3000 is in use, run `npm run dev -- --port 3
 
 Participants enter their name, age, and gender, then review the quiet-space and headphone reminder. Each round has a three-second countdown, starts at four random digits (0–9), and adds one digit after each success. The whole sequence stays visible while each digit flashes in order. Digit slots start at 400 ms and decrease by 50 ms after each success, with a 200 ms minimum (reached in round 5). Each slot highlights its digit for 80% of the interval, followed by a 20% gap (capped at 100 ms). Recall has a strict ten-second window. A wrong answer or timeout ends the current scenario; results and confetti appear after all scenarios finish. Participants complete that full progression separately for no sound, white noise, loud conversation, classical music, pop music, and rock music, in that order. Failure ends only the current scenario; all six must end before the session is marked complete. The final screen compares scenario results.
 
+## Sharing development settings
+
+`.env.local` is tracked with git-crypt encryption. Git stores ciphertext; an unlocked development checkout contains the normal readable file. `.gitattributes` must remain tracked so changes are encrypted before staging. Cloud Run source uploads and Docker build contexts exclude the file; production uses Secret Manager.
+
+On another development computer, install git-crypt and the Google Cloud CLI, clone this repository, then run:
+
+```sh
+gcloud auth login
+npm run env:unlock
+git-crypt status
+```
+
+The helper retrieves version 1 of `sound-of-memory-git-crypt-key` from Google Secret Manager in project `sound-of-memory-511302`, unlocks the checkout, and deletes its protected temporary key file. Your signed-in Google account needs Secret Accessor permission on that secret (or equivalent existing access). Cloud Run does not need this key, and no new access is granted to its service account.
+
+On the original Mac, git-crypt is installed at `~/.local/bin/git-crypt` and a backup exported key remains at `~/.config/git-crypt/sound-of-memory.key`. Keep that backup securely outside Git. Encryption does not remove plaintext from earlier Git history. Unlocking also stores a working key inside the local `.git` directory, as git-crypt normally does.
+
 ## Database environments
 
 The `memory-db` Neon project has separate `dev` and `production` branches. Local VS Code runs, `npm run dev`, and local `npm start` all require the DEV endpoint in `.env.local`. The server checks the endpoint before opening a connection; accidentally supplying the PROD URL locally fails instead of writing production data. Cloud Run is identified by its `K_SERVICE` environment variable and requires the PROD endpoint. Cloud Run configuration and deployment are a separate step.
 
-The public endpoint identifiers are in `lib/database-config.mjs`; update those mappings if branches are recreated. Passwords and connection strings belong only in ignored environment files or deployment secrets. `NODE_ENV=production` alone does not select PROD.
+The public endpoint identifiers are in `lib/database-config.mjs`; update those mappings if branches are recreated. Passwords and connection strings belong only in encrypted environment files or deployment secrets. `NODE_ENV=production` alone does not select PROD.
 
 Schema changes live in `db/migrations/001-initial-schema.sql`. Run `npm run db:setup:neon` to create the initial tables using `DATABASE_URL_UNPOOLED`, or the direct endpoint derived from `DATABASE_URL`. The app uses a shared PostgreSQL pool and does not create tables at startup. Mutations run in transactions, with a per-session lock to keep simultaneous submissions from scoring twice.
 

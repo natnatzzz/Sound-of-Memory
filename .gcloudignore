@@ -1,0 +1,6 @@
+.gcloudignore
+.git
+.gitignore
+#!include:.gitignore
+# Development credentials stay out of Cloud Run source uploads.
+.env.local
