@@ -23,6 +23,18 @@ function run(command, args) {
 }
 
 try {
+ const envFile = path.join(root, '.env.local');
+ if (!fs.existsSync(envFile)) {
+  if (process.argv.includes('--if-encrypted')) process.exit(0);
+  throw new Error('.env.local is missing. Pull the encrypted file first.');
+ }
+ // git-crypt ciphertext starts with this binary marker. An unlocked checkout
+ // keeps decrypting future Git changes locally without fetching the key again.
+ const marker = Buffer.from('\0GITCRYPT\0');
+ if (!fs.readFileSync(envFile).subarray(0, marker.length).equals(marker)) {
+  if (!process.argv.includes('--if-encrypted')) console.log('Development settings are already decrypted.');
+  process.exit(0);
+ }
  run(gitCrypt, ['--version']);
  run('gcloud', ['--version']);
  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-git-crypt-'));

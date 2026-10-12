@@ -26,10 +26,13 @@ On another development computer, install git-crypt and the Google Cloud CLI, clo
 ```sh
 gcloud auth login
 npm run env:unlock
+npm run hooks:install
 git-crypt status
 ```
 
 The helper retrieves version 1 of `sound-of-memory-git-crypt-key` from Google Secret Manager in project `sound-of-memory-511302`, unlocks the checkout, and deletes its protected temporary key file. Your signed-in Google account needs Secret Accessor permission on that secret (or equivalent existing access). Cloud Run does not need this key, and no new access is granted to its service account.
+
+Enable the tracked Git hooks once per development checkout with `npm run hooks:install`. After merges, rebases, and checkouts, they unlock `.env.local` only if it is still encrypted. Already decrypted files require no network access. Git does not install hooks automatically on clone, and an already-up-to-date pull does not fire a merge hook; run `npm run env:unlock` for the initial setup. If authentication fails, the file stays encrypted and the helper explains how to sign in; the Git operation is not undone. Once unlocked, git-crypt handles subsequent file changes using its local working key. Hook installation replaces any existing `core.hooksPath` setting, so check that setting before enabling it on a computer with custom hooks.
 
 On the original Mac, git-crypt is installed at `~/.local/bin/git-crypt` and a backup exported key remains at `~/.config/git-crypt/sound-of-memory.key`. Keep that backup securely outside Git. Encryption does not remove plaintext from earlier Git history. Unlocking also stores a working key inside the local `.git` directory, as git-crypt normally does.
 
