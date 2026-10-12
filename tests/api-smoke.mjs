@@ -1,9 +1,16 @@
 // Run against an already started app: node tests/api-smoke.mjs http://127.0.0.1:3001
 import assert from 'node:assert/strict';
 import { SCENARIOS } from '../lib/scenarios.mjs';
-import Database from 'better-sqlite3';
+import nextEnv from '@next/env';
+import { database, transaction } from '../lib/db.js';
+import { databaseConfig } from '../lib/database-config.mjs';
+nextEnv.loadEnvConfig(process.cwd());
+if (process.env.K_SERVICE) throw new Error('Run smoke tests locally against DEV only.');
+databaseConfig();
 const base=process.argv[2] || 'http://127.0.0.1:3000';
 const ids=[];
+const db=database();
+assert.ok(['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname), 'Smoke tests require a local app.');
 async function post(path,body){const r=await fetch(`${base}/api/${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {httpStatus:r.status,...await r.json()};}
 const participant={name:'__API_SMOKE_TEST__',age:20,gender:'Prefer not to say',location:{status:'unavailable'}};
 try {
@@ -13,7 +20,7 @@ try {
  }
  assert.equal((await post('sessions',{...participant,age:0})).httpStatus,400);
  const session=await post('sessions',participant);assert.equal(session.httpStatus,200);ids.push(session.id);
- assert.deepEqual(session.trials.map(t=>t.scenario),['silence','white-noise','conversation','classical','pop','rock']);
+ assert.deepEqual(session.trials.map(t=>t.scenario),SCENARIOS.map(s=>s.id));
  const start=(trial,volume)=>post('rounds',{sessionId:session.id,trialId:trial.id,action:'start',volume});
  assert.equal((await start(session.trials[1],.4)).httpStatus,409);
  let final;
@@ -21,9 +28,13 @@ try {
   const volume=index===0?0:.4;
   if(index>0)assert.equal((await start(trial,0)).httpStatus,400);
   let r=await start(trial,volume);assert.equal(r.httpStatus,200);assert.match(r.sequence,/^\d{4}$/);assert.equal(r.digitMs,400);assert.equal(r.roundNumber,1);
+  const restarted=await start(trial,volume);assert.equal(restarted.sequence,r.sequence);assert.equal(restarted.roundNumber,1);
   const submission={sessionId:session.id,trialId:trial.id,action:'submit',roundNumber:1,answer:r.sequence,responseMs:2500,events:[{type:'audio-start',scenario:trial.scenario,volume}]};
-  let result=await post('rounds',submission);assert.equal(result.outcome,'correct');assert.equal(result.successfulRounds,1);
-  assert.equal((await post('rounds',submission)).successfulRounds,1);
+  const submissions=await Promise.all([post('rounds',submission),post('rounds',submission)]);
+  assert.ok(submissions.every(result=>result.outcome==='correct' && result.successfulRounds===1));
+  let result=submissions[0];
+  const retries=await Promise.all([post('rounds',submission),post('rounds',submission)]);
+  assert.ok(retries.every(result=>result.outcome==='correct' && result.successfulRounds===1));
   r=await start(trial,volume);assert.equal(r.sequence.length,5);assert.equal(r.digitMs,350);
   const failure={...submission,roundNumber:2,answer:'',responseMs:10000,events:[]};
   result=await post('rounds',failure);assert.equal(result.outcome,'timeout');assert.equal(result.longestSequence,4);
@@ -33,13 +44,35 @@ try {
   final=result;
  }
  assert.equal(final.trials.length,SCENARIOS.length);assert.ok(final.trials.every(t=>t.successfulRounds===1 && t.status==='completed'));
- const db=new Database('data/memory.sqlite');
- assert.equal(db.prepare('SELECT status FROM sessions WHERE id=?').get(session.id).status,'completed');
- const rows=db.prepare('SELECT r.*,t.scenario FROM trial_rounds r JOIN trials t ON t.id=r.trial_id WHERE t.session_id=?').all(session.id);
- assert.equal(rows.length,SCENARIOS.length*2);assert.ok(rows.every(r=>r.volume===(r.scenario==='silence'?0:.4)));db.close();
+ assert.equal((await db.query('SELECT status, successful_rounds FROM sessions WHERE id=$1',[session.id])).rows[0].status,'completed');
+ assert.equal((await db.query('SELECT successful_rounds FROM sessions WHERE id=$1',[session.id])).rows[0].successful_rounds,SCENARIOS.length);
+ const rows=(await db.query('SELECT r.*,t.scenario FROM trial_rounds r JOIN trials t ON t.id=r.trial_id WHERE t.session_id=$1',[session.id])).rows;
+ assert.equal(rows.length,SCENARIOS.length*2);assert.ok(rows.every(r=>r.volume===(r.scenario==='silence'?0:.4)));
  const abandoned=await post('sessions',participant);ids.push(abandoned.id);await post('finish',{sessionId:abandoned.id});
  assert.equal((await post('rounds',{sessionId:abandoned.id,trialId:abandoned.trials[0].id,action:'start',volume:0})).httpStatus,409);
- console.log('PASS: six scenarios, fresh round settings, enforced order, audible volume validation, per-scenario SQLite results, retries, full completion, abandonment, and all audio assets.');
+ assert.ok((await db.query('SELECT status FROM trials WHERE session_id=$1',[abandoned.id])).rows.every(t=>t.status==='abandoned'));
+ // BIGINT millisecond timestamps must still enforce the server-side deadline.
+ const expired=await post('sessions',participant);ids.push(expired.id);
+ const expiredTrial=expired.trials[0];
+ const expiredRound=await post('rounds',{sessionId:expired.id,trialId:expiredTrial.id,action:'start',volume:0});
+ await db.query('UPDATE trial_rounds SET started_at=$1 WHERE trial_id=$2',[Date.now()-60000,expiredTrial.id]);
+ assert.equal((await post('rounds',{sessionId:expired.id,trialId:expiredTrial.id,action:'submit',roundNumber:1,answer:expiredRound.sequence,responseMs:100,events:[]})).outcome,'timeout');
+ const originalName=(await db.query('SELECT name FROM sessions WHERE id=$1',[expired.id])).rows[0].name;
+ await assert.rejects(transaction(async client=>{
+  await client.query('UPDATE sessions SET name=$1 WHERE id=$2',['__ROLLBACK_CHECK__',expired.id]);
+  throw new Error('Intentional rollback');
+ }), /Intentional rollback/);
+ assert.equal((await db.query('SELECT name FROM sessions WHERE id=$1',[expired.id])).rows[0].name,originalName);
+ console.log('PASS: eight scenarios, PostgreSQL persistence, concurrent submissions, restart/retry behavior, server deadline, rollback, abandonment, and audio assets.');
 } finally {
- const db=new Database('data/memory.sqlite');for(const id of ids){db.prepare('DELETE FROM trial_rounds WHERE trial_id IN (SELECT id FROM trials WHERE session_id=?)').run(id);db.prepare('DELETE FROM trials WHERE session_id=?').run(id);db.prepare('DELETE FROM rounds WHERE session_id=?').run(id);db.prepare('DELETE FROM sessions WHERE id=?').run(id);}db.close();
+ try {
+  await transaction(async client => {
+   for (const id of ids) {
+    await client.query('DELETE FROM trial_rounds WHERE trial_id IN (SELECT id FROM trials WHERE session_id=$1)',[id]);
+    await client.query('DELETE FROM trials WHERE session_id=$1',[id]);
+    await client.query('DELETE FROM rounds WHERE session_id=$1',[id]);
+    await client.query('DELETE FROM sessions WHERE id=$1',[id]);
+   }
+  });
+ } finally { await db.end(); }
 }

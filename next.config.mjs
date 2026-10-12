@@ -1,1 +1,1 @@
-export default { serverExternalPackages: ['better-sqlite3'] };
+export default { serverExternalPackages: ['pg'] };

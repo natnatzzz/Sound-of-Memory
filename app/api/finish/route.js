@@ -1,8 +1,15 @@
-import { database } from '../../../lib/db';
+import { transaction } from '../../../lib/db';
+export const runtime = 'nodejs';
 export async function POST(request) {
- try { const {sessionId}=await request.json();const db=database();db.transaction(()=>{
- db.prepare("UPDATE sessions SET status='abandoned',completed_at=? WHERE id=? AND status='active'").run(new Date().toISOString(),sessionId);
- db.prepare("UPDATE trials SET status='abandoned',completed_at=? WHERE session_id=? AND status IN ('pending','active')").run(new Date().toISOString(),sessionId);
- })();return Response.json({ok:true}); }
- catch {return Response.json({error:'Could not close session.'},{status:500});}
+ try {
+  const {sessionId}=await request.json();
+  await transaction(async db => {
+   // Use the same session lock order as round submission.
+   await db.query('SELECT id FROM sessions WHERE id=$1 FOR UPDATE',[sessionId]);
+   const completedAt=new Date().toISOString();
+   await db.query("UPDATE sessions SET status='abandoned',completed_at=$1 WHERE id=$2 AND status='active'",[completedAt,sessionId]);
+   await db.query("UPDATE trials SET status='abandoned',completed_at=$1 WHERE session_id=$2 AND status IN ('pending','active')",[completedAt,sessionId]);
+  });
+  return Response.json({ok:true});
+ } catch {return Response.json({error:'Could not close session.'},{status:500});}
 }
