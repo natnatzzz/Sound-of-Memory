@@ -1,1 +1,4 @@
-export default { serverExternalPackages: ['pg'] };
+export default {
+  serverExternalPackages: ['pg'],
+  experimental: { agentUpgrade: 'security' },
+};
