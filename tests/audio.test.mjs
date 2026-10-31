@@ -27,7 +27,7 @@ test('audio plays looped stimuli and stops sources; silence creates no context',
   audio.stop();assert.ok(sources[0].stopped);assert.equal(audio.source,null);
   await audio.prepare('conversation');audio.start('conversation',.4);assert.equal(sources[1].buffer.duration,30);assert.ok(sources[1].loop);
   audio.start('white-noise',.4);assert.ok(sources[1].stopped);
-  for(const scenario of ['classical','pop','rock']) {
+  for(const scenario of ['classical','rock','rap']) {
    await audio.prepare(scenario);audio.start(scenario,.4);assert.equal(audio.bufferScenario,scenario);assert.equal(sources.at(-1).buffer.duration,30);assert.ok(sources.at(-1).loop);
    const continuingSource=audio.source,sourceCount=sources.length;assert.equal(audio.start(scenario,.4),false);assert.equal(audio.source,continuingSource);assert.equal(sources.length,sourceCount);assert.equal(continuingSource.stopped,undefined);
   }
@@ -80,4 +80,31 @@ test('DTMF emits the correct two frequencies for every digit and stops on cancel
   audio.stop();assert.equal(audio.tones.size,0);assert.ok(oscillators.every(o=>o.stopAt===undefined));
   audio.dispose();
  }finally{globalThis.window=originalWindow;}
+});
+
+test('requests media playback before audio resumes and restores the prior session on disposal',async()=>{
+ const originalWindow=globalThis.window;
+ const session={type:'auto'};
+ class Context {
+  state='running';
+  async resume(){assert.equal(session.type,'playback');}
+  close(){}
+ }
+ globalThis.window={AudioContext:Context,navigator:{audioSession:session}};
+ try {
+  const audio=new ExperimentAudio();
+  await audio.prepare('silence');assert.equal(session.type,'auto');
+  await audio.prepare('silence',{countdown:true});assert.equal(session.type,'playback');
+  await audio.prepare('dtmf');audio.dispose();assert.equal(session.type,'auto');
+ } finally {globalThis.window=originalWindow;}
+});
+test('restricted audio session API does not block normal audio playback',async()=>{
+ const originalWindow=globalThis.window;
+ let resumed=false;
+ class Context {state='running';async resume(){resumed=true;}close(){}}
+ const session={get type(){return 'auto';},set type(value){throw new Error('Unsupported');}};
+ globalThis.window={AudioContext:Context,navigator:{audioSession:session}};
+ try {
+  const audio=new ExperimentAudio();await audio.prepare('dtmf');assert.ok(resumed);audio.dispose();
+ } finally {globalThis.window=originalWindow;}
 });

@@ -14,7 +14,7 @@ export async function POST(request) {
   const trials=await trialResults(session.id,db);
   const timing=(await db.query('SELECT started_at,completed_at FROM sessions WHERE id=$1',[session.id])).rows[0];
   const totalTimeMs=timing.completed_at ? Math.max(0,Date.parse(timing.completed_at)-Date.parse(timing.started_at)) : null;
-  return {outcome:round.outcome,expected:round.sequence,...trials.find(t=>t.id===trial.id),trials,totalTimeMs,allCompleted:trials.every(t=>t.status==='completed')};
+  return {outcome:round.outcome,expected:round.sequence,answer:round.answer ?? '',...trials.find(t=>t.id===trial.id),trials,totalTimeMs,allCompleted:trials.every(t=>t.status==='completed')};
  }
  if (body.action==='submit' && Number.isInteger(body.roundNumber)) {
   const saved=(await db.query('SELECT * FROM trial_rounds WHERE trial_id=$1 AND round_number=$2',[trial.id,body.roundNumber])).rows[0];
@@ -50,7 +50,7 @@ export async function POST(request) {
   await db.query("UPDATE trials SET status='completed',completed_at=$1 WHERE id=$2",[new Date().toISOString(),trial.id]);
   if(!(await db.query("SELECT id FROM trials WHERE session_id=$1 AND status!='completed'",[session.id])).rows[0])await db.query("UPDATE sessions SET status='completed',completed_at=$1 WHERE id=$2",[new Date().toISOString(),session.id]);
  }
- return Response.json(await result({...round,outcome}));
+ return Response.json(await result({...round,answer,outcome}));
  });
  } catch(error) { console.error('Could not save round:', error.code || error.name); return Response.json({error:'Could not save this round. Please retry.'},{status:500});}
 }

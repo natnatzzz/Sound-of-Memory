@@ -13,3 +13,12 @@ test('rounds add digits and accelerate to a 200ms floor',async()=>{
  assert.deepEqual(roundSettings(6),{digitCount:9,digitMs:200});
  assert.deepEqual(roundSettings(30),{digitCount:33,digitMs:200});
 });
+
+test('final-round matching counts only consecutive correct digits from the start',async()=>{
+ const {matchingPrefixLength}=await import('../lib/experiment.mjs');
+ assert.equal(matchingPrefixLength('012345','012945'),3);
+ assert.equal(matchingPrefixLength('1234','9234'),0);
+ assert.equal(matchingPrefixLength('1234','12'),2);
+ assert.equal(matchingPrefixLength('1234',''),0);
+ assert.equal(matchingPrefixLength('1234','1234'),4);
+});

@@ -5,7 +5,7 @@ import { trialStats } from '../../lib/analytics.mjs';
 import Dashboard from './dashboard';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-export const metadata = {title:'Analyze Data · Sound of Memory'};
+export const metadata = {title:'Analyze Data · Sound of Numbers'};
 export default async function AnalysisPage() {
  if (!(await analysisAuthorized())) redirect('/analyze/login');
  const data=await transaction(async db=>{

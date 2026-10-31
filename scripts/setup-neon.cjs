@@ -26,15 +26,16 @@ async function main() {
     await client.query('BEGIN');
     await client.query("SET LOCAL lock_timeout = '10s'");
     await client.query(readFileSync(path.join(root, 'db/migrations/001-initial-schema.sql'), 'utf8'));
+    await client.query(readFileSync(path.join(root, 'db/migrations/002-informed-consent.sql'), 'utf8'));
     const { rows } = await client.query(`
       SELECT table_name, count(*)::integer AS columns
       FROM information_schema.columns
       WHERE table_schema = 'public'
-        AND table_name IN ('sessions', 'rounds', 'trials', 'trial_rounds')
+        AND table_name IN ('sessions', 'rounds', 'trials', 'trial_rounds', 'consent_records')
       GROUP BY table_name ORDER BY table_name
     `);
-    const expected = { sessions: 10, rounds: 11, trials: 8, trial_rounds: 12 };
-    if (rows.length !== 4 || rows.some(row => row.columns !== expected[row.table_name])) {
+    const expected = { sessions: 10, rounds: 11, trials: 8, trial_rounds: 12, consent_records: 8 };
+    if (rows.length !== 5 || rows.some(row => row.columns !== expected[row.table_name])) {
       throw new Error('Existing tables differ from the expected schema; transaction rolled back.');
     }
     await client.query('COMMIT');

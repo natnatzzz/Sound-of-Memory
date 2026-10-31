@@ -67,3 +67,22 @@ Background sound begins at the first countdown and continues through presentatio
 The browser uses monotonic response timing; server scoring also checks an overall round ceiling. Browser scheduling can vary with inactive tabs or device load, and recorded timestamps help identify affected trials. Scenario order is fixed as requested; it is recorded in `trials.position` for analysis of potential order effects.
 
 Timing constants and scoring live in `lib/experiment.mjs`; scenario definitions are in `lib/scenarios.mjs`, and audio lifecycle logic is in `lib/audio.mjs`.
+
+## Informed consent and retention
+
+Run `npm run db:setup:neon` before deploying the consent flow. This applies
+`002-informed-consent.sql`, adding a separate consent table linked to sessions.
+The server requires current consent; under-18 participants require a guardian
+signature and participant agreement. Each record saves the statement snapshot,
+version, signer role, signature, server timestamp, and one-year expiration.
+Change the consent version whenever the statement or signing requirements change.
+
+Schedule `node scripts/purge-expired-data.mjs` daily in the deployed environment
+with its existing database credentials. This deletes sessions older than one year,
+including responses and consent records. **The repository does not provision a
+scheduler**; configure it before enrolling participants under the retention policy.
+Researchers must also remove exported copies and handle database-backup retention
+under the same policy. Earlier deletion requests go to natalie.l.zhao@gmail.com;
+use the participant name and approximate test date to locate the session, then
+remove dependent round/trial records and the session (consent cascades on deletion).
+Consent signatures are kept out of the analysis dashboard and CSV exports.
